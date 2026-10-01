@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Transaction Manager</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f5f6fa;--card:#fff;--tx:#1d2433;--mut:#6b7385;--bd:#e2e5ee;--pri:#3b5bdb;--cr:#1b8a4b;--db:#d6363f}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12151c;--card:#1b202b;--tx:#e8ebf3;--mut:#98a0b3;--bd:#2c3342;--pri:#7c93ff;--cr:#4cc38a;--db:#ff6b73}}
+:root[data-theme="dark"]{--bg:#12151c;--card:#1b202b;--tx:#e8ebf3;--mut:#98a0b3;--bd:#2c3342;--pri:#7c93ff;--cr:#4cc38a;--db:#ff6b73}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0 0 12px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}
+.card small{color:var(--mut)}
+.card b{display:block;font-size:22px;margin-top:2px}
+.cr{color:var(--cr)}.db{color:var(--db)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+label{font-size:12px;color:var(--mut);display:block;margin-bottom:3px}
+input,select,button{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;width:100%}
+button{cursor:pointer;width:auto;background:var(--card)}
+button.p{background:var(--pri);color:#fff;border-color:var(--pri)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.sec{margin-bottom:14px}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:900px}
+th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--bd);white-space:nowrap}
+th{font-size:12px;color:var(--mut);cursor:pointer;user-select:none}
+td.r,th.r{text-align:right}
+.tag{padding:2px 8px;border-radius:99px;font-size:12px;background:var(--bg)}
+td button{padding:3px 8px;font-size:12px}
+.empty{padding:24px;text-align:center;color:var(--mut)}
+.note{font-size:12px;color:var(--mut);margin-top:8px}
+@media print{.noprint{display:none!important}body{background:#fff;color:#000}}
+</style>
+</head>
+<body>
+<div id="lock" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:var(--bg);padding:16px;z-index:9">
+<div class="card" style="width:100%;max-width:340px;text-align:center">
+<div style="font-size:32px">🔒</div><h1 id="lt" style="font-size:18px">Enter password</h1>
+<input type="password" id="lp" placeholder="Password" autocomplete="off" style="margin-bottom:8px">
+<input type="password" id="lp2" placeholder="Confirm password" autocomplete="off" style="margin-bottom:8px;display:none">
+<div id="lerr" class="db" style="min-height:18px;font-size:13px"></div>
+<button class="p" id="lgo" style="width:100%;margin-top:6px">Unlock</button>
+<div class="note"><a href="#" id="lforgot" style="color:var(--mut)">Forgot password? Reset (deletes all data)</a></div>
+</div></div>
+<div class="wrap" id="wrap" style="display:none">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h1>💰 Transaction Manager</h1><button id="lockbtn" class="noprint">🔒 Lock</button></div>
+<div class="cards">
+<div class="card"><small>Total Credit</small><b class="cr" id="tc">0</b></div>
+<div class="card"><small>Total Debit</small><b class="db" id="td">0</b></div>
+<div class="card"><small>Balance</small><b id="tb">0</b></div>
+</div>
+
+<div class="card sec noprint">
+<div class="grid">
+<div><label>Date</label><input type="date" id="fd"></div>
+<div><label>Person (sent / received)</label><input id="fp" list="ppl" placeholder="e.g. Rahul"><datalist id="ppl"></datalist></div>
+<div><label>Description</label><input id="fx" placeholder="e.g. Grocery"></div>
+<div><label>Category</label><input id="fc" list="cats" placeholder="e.g. Food"><datalist id="cats"></datalist></div>
+<div><label>Type</label><select id="ft"><option>Debit</option><option>Credit</option></select></div>
+<div><label>Payment mode</label><select id="fm"><option>Cash</option><option>UPI</option><option>Other</option></select></div>
+<div><label>Amount</label><input type="number" id="fa" step="0.01" placeholder="0.00"></div>
+</div>
+
+<div class="row"><button class="p" id="save">Add transaction</button><button id="cancel" style="display:none">Cancel edit</button></div>
+</div>
+
+<div class="card sec noprint">
+<div class="grid">
+<div><label>Search</label><input id="q" placeholder="Search…"></div>
+<div><label>Type</label><select id="ftype"><option value="">All</option><option>Debit</option><option>Credit</option></select></div>
+<div><label>Mode</label><select id="fmode"><option value="">All</option><option>Cash</option><option>UPI</option><option>Other</option></select></div>
+<div><label>Category</label><select id="fcat"><option value="">All</option></select></div>
+<div><label>From</label><input type="date" id="from"></div>
+<div><label>To</label><input type="date" id="to"></div>
+</div>
+</div>
+
+<div class="card sec">
+<div class="tw"><table>
+<thead><tr>
+<th data-k="date">Date ↕</th><th data-k="person">Person ↕</th><th data-k="desc">Description ↕</th><th data-k="cat">Category ↕</th><th data-k="mode">Mode ↕</th><th data-k="type">Type ↕</th><th class="r" data-k="amt">Amount ↕</th><th class="r">Balance</th><th class="noprint"></th>
+</tr></thead>
+<tbody id="tb2"></tbody></table></div>
+<div class="row noprint">
+<button id="ecsv">⬇ CSV</button><button id="exlsx">⬇ Excel</button><button id="eprint">🖨 Print / PDF</button><button id="clear">Delete all</button>
+</div>
+<div class="note noprint">Exports use the current filters. Data is stored only in this browser (local storage).</div>
+</div>
+</div>
+
+<script>
+const KEY="txn-manager-v1";
+let tx=[],editId=null,sort={k:"date",d:-1};
+const $=id=>document.getElementById(id);
+function load(){try{tx=JSON.parse(localStorage.getItem(KEY))||[]}catch(e){tx=[]}
+tx=tx.filter(x=>x.type==="Debit"||x.type==="Credit");
+tx.forEach(x=>{x.mode=x.mode||"Other";x.person=x.person||""});
+}
+const sg=x=>x.type==="Credit"?x.amt:-x.amt;
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(tx))}catch(e){alert("Could not save to local storage.")}}
+const fmt=n=>n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function filtered(){
+const q=$("q").value.toLowerCase(),t=$("ftype").value,c=$("fcat").value,f=$("from").value,to=$("to").value,m=$("fmode").value;
+let r=tx.filter(x=>(!q||(x.desc+" "+x.cat+" "+x.person).toLowerCase().includes(q))&&(!t||x.type===t)&&(!m||x.mode===m)&&(!c||x.cat===c)&&(!f||x.date>=f)&&(!to||x.date<=to));
+r.sort((a,b)=>{let A=a[sort.k],B=b[sort.k];let v=A>B?1:A<B?-1:0;if(!v)v=a.id-b.id;return v*sort.d});
+return r}
+function render(){
+const cats=[...new Set(tx.map(x=>x.cat).filter(Boolean))].sort();
+const cur=$("fcat").value;
+$("fcat").innerHTML='<option value="">All</option>'+cats.map(c=>`<option>${esc(c)}</option>`).join("");
+$("fcat").value=cats.includes(cur)?cur:"";
+$("cats").innerHTML=cats.map(c=>`<option value="${esc(c)}">`).join("");
+$("ppl").innerHTML=[...new Set(tx.map(x=>x.person).filter(Boolean))].sort().map(p=>`<option value="${esc(p)}">`).join("");
+const rows=filtered();
+let cr=0,db=0;rows.forEach(x=>{x.type==="Credit"?cr+=x.amt:db+=x.amt});
+$("tc").textContent=fmt(cr);$("td").textContent=fmt(db);
+$("tb").textContent=fmt(cr-db);$("tb").className=cr-db<0?"db":"cr";
+const chron=[...rows].sort((a,b)=>a.date>b.date?1:a.date<b.date?-1:a.id-b.id);
+let bal=0;const rb={};chron.forEach(x=>{bal+=sg(x);rb[x.id]=bal});
+window._rb=rb;
+$("tb2").innerHTML=rows.length?rows.map(x=>{
+const act=`<td class="noprint"><button onclick="edit(${x.id})">Edit</button> <button onclick="del(${x.id})">Delete</button></td>`;
+const c=x.type==="Credit"?"cr":"db";
+return `<tr><td>${x.date}</td><td>${esc(x.person||"-")}</td><td>${esc(x.desc)}</td><td><span class="tag">${esc(x.cat||"-")}</span></td><td>${x.mode}</td><td class="${c}">${x.type}</td><td class="r ${c}">${x.type==="Credit"?"+":"−"}${fmt(x.amt)}</td><td class="r">${fmt(rb[x.id])}</td>${act}</tr>`}).join(""):'<tr><td colspan="9" class="empty">No transactions yet.</td></tr>';
+}
+function reset(){editId=null;$("fx").value=$("fc").value=$("fa").value=$("fp").value="";$("ft").value="Debit";$("fm").value="Cash";$("fd").value=new Date().toISOString().slice(0,10);$("save").textContent="Add transaction";$("cancel").style.display="none"}
+$("save").onclick=()=>{
+const d=$("fd").value,desc=$("fx").value.trim(),amt=parseFloat($("fa").value);
+if(!d||!desc||!(amt>0)){alert("Please enter date, description and an amount above 0.");return}
+const o={date:d,desc,person:$("fp").value.trim(),mode:$("fm").value,cat:$("fc").value.trim(),type:$("ft").value,amt};
+if(editId){tx=tx.map(x=>x.id===editId?{...x,...o}:x)}else tx.push({id:Date.now(),...o});
+persist();reset();render()};
+$("cancel").onclick=reset;
+
+window.edit=id=>{const x=tx.find(t=>t.id===id);if(!x)return;editId=id;$("fd").value=x.date;$("fx").value=x.desc;$("fp").value=x.person;$("fm").value=x.mode;$("fc").value=x.cat;$("ft").value=x.type;$("fa").value=x.amt;$("save").textContent="Update transaction";$("cancel").style.display="";window.scrollTo(0,0)};
+window.del=id=>{if(confirm("Delete this transaction?")){tx=tx.filter(x=>x.id!==id);persist();render()}};
+$("clear").onclick=()=>{if(tx.length&&confirm("Delete ALL transactions? This cannot be undone.")){tx=[];persist();render()}};
+["q","ftype","fcat","fmode","from","to"].forEach(i=>$(i).addEventListener("input",render));
+document.querySelectorAll("th[data-k]").forEach(th=>th.onclick=()=>{const k=th.dataset.k;sort=sort.k===k?{k,d:-sort.d}:{k,d:1};render()});
+
+// Exports
+const HEAD=["Date","Person","Description","Category","Mode","Type","Amount","Balance"];
+function tableData(){const rows=filtered();return rows.map(x=>[x.date,x.person,x.desc,x.cat,x.mode,x.type,x.amt,Math.round((window._rb[x.id]||0)*100)/100])}
+async function getDl(){
+for(let i=0;i<1;i++){
+if(typeof claude!=="undefined"&&claude&&typeof claude.use==="function"){try{return await claude.use("downloads")}catch(e){return null}}
+await new Promise(r=>setTimeout(r,250))}
+return null}
+async function save(filename,data){
+const d=await getDl();
+if(d){try{await d.save({filename,data});return}catch(e){if(e&&e.code==="declined")return}}
+try{const blob=new Blob([data],{type:filename.endsWith(".csv")?"text/csv;charset=utf-8":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();
+setTimeout(()=>URL.revokeObjectURL(a.href),4000)}
+catch(e){alert("Download is not available in this view. Try opening the page in a full browser tab.")}}
+$("ecsv").onclick=()=>{const rows=tableData();if(!rows.length){alert("Nothing to export.");return}
+const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
+save("transactions.csv","\uFEFF"+[HEAD,...rows].map(r=>r.map(q).join(",")).join("\r\n"))};
+$("exlsx").onclick=()=>{const rows=tableData();if(!rows.length){alert("Nothing to export.");return}
+if(!window.XLSX){alert("Excel library did not load.");return}
+const ws=XLSX.utils.aoa_to_sheet([HEAD,...rows]);ws["!cols"]=[{wch:12},{wch:18},{wch:28},{wch:16},{wch:8},{wch:8},{wch:12},{wch:12}];
+const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Transactions");
+save("transactions.xlsx",XLSX.write(wb,{bookType:"xlsx",type:"array"}))};
+$("eprint").onclick=()=>{try{window.print()}catch(e){alert("Printing is not available here.")}};
+
+const PK="txn-manager-pw";
+async function hash(p){const t="txn-salt-v1"+p;try{const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(t));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("")}catch(e){let h=0;for(const c of t)h=(h*31+c.charCodeAt(0))|0;return "f"+h}}
+const getPw=()=>{try{return localStorage.getItem(PK)}catch(e){return null}};
+function showLock(){const has=!!getPw();tx=[];$("tb2").innerHTML="";$("wrap").style.display="none";$("lock").style.display="flex";
+$("lt").textContent=has?"Enter password":"Set a password to protect this page";$("lp2").style.display=has?"none":"block";$("lforgot").style.display=has?"":"none";
+$("lgo").textContent=has?"Unlock":"Set password";$("lp").value=$("lp2").value="";$("lerr").textContent="";$("lp").focus()}
+async function unlock(){const p=$("lp").value,e=m=>$("lerr").textContent=m;
+if(!p)return e("Enter a password.");
+if(getPw()){if(await hash(p)!==getPw())return e("Wrong password.")}
+else{if(p.length<4)return e("Use at least 4 characters.");if(p!==$("lp2").value)return e("Passwords do not match.");
+try{localStorage.setItem(PK,await hash(p))}catch(x){return e("Could not save password.")}}
+$("lock").style.display="none";$("wrap").style.display="";load();reset();render()}
+$("lgo").onclick=unlock;
+["lp","lp2"].forEach(i=>$(i).addEventListener("keydown",e=>{if(e.key==="Enter")unlock()}));
+$("lockbtn").onclick=showLock;
+$("lforgot").onclick=e=>{e.preventDefault();if(confirm("This will DELETE all transactions and the password. Continue?")){try{localStorage.removeItem(KEY);localStorage.removeItem(PK)}catch(x){}showLock()}};
+showLock();
+</script>
+</body>
+</html>
